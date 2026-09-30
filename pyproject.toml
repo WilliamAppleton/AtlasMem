@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "atlasmem"
+version = "0.1.0"
+description = "Just-in-Time Memory for LLM agents: store raw trajectories, curate task-adaptive briefings at read time."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+atlasmem = "atlasmem.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlasmem"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: hits a real Ollama endpoint (set ATLASMEM_LIVE=1)"]
