@@ -98,15 +98,36 @@ Tools: `get_briefing(task, k)`, `record_trajectory(task, steps, success?)`, `mem
 {"mcpServers": {"atlasmem": {"command": "atlasmem", "args": ["serve"]}}}
 ```
 
+## Decision-model judges (System One / Jev)
+
+`SystemOneJudge` asks a Jev-style decision model for P(success) (and a 0-1 progress score,
+intended as a dense training reward) instead of generated text. One client serves both
+backends, which share the `/v1/systemone` schema:
+
+```python
+from atlasmem import SystemOneClient, SystemOneJudge, CascadeJudge, LLMJudge, OllamaLLM
+
+local = SystemOneJudge(SystemOneClient("nimble", base_url="http://localhost:11434"))  # Ollama >= 0.35
+cloud = SystemOneJudge(SystemOneClient("<model>", base_url="https://api.typesafe.ai"))  # $TYPESAFE_API_KEY
+judge = CascadeJudge(fast=local, slow=LLMJudge(OllamaLLM("gpt-oss:20b")), low=0.1, high=0.9)
+```
+
+`CascadeJudge` accepts/rejects confident cases with the decision model and escalates only the
+uncertain band to the evidence-checked LLM judge.
+
 ## Judge evaluation
 
 ```bash
-python scripts/eval_judge.py --tasks 10 --model gpt-oss:20b
+python scripts/eval_judge.py --tasks 10 --noisy \
+    --judge llm:gpt-oss:20b --judge s1:tev1:4b@http://localhost:11434
 ```
 
-Builds one correct and several near-miss failures per task (skipped state step, wrong
-destination, look-alike object, success claimed only in the action text) and prints the
-judge's false-accept / false-reject rates with and without the evidence check.
+Per task it builds one correct trajectory and near-miss failures (skipped state step, wrong
+destination, look-alike object, success claimed only in the action text), labelled by the
+environment; `--noisy` pads them with realistic dead ends. It also replays real executor
+trajectories from `scripts/data/real_cases.jsonl`, including a mug-placed-for-a-cup failure an
+earlier judge accepted. Reports false-accept / false-reject rates, latency, and for
+probabilistic judges the best achievable threshold.
 
 ## Tests
 
