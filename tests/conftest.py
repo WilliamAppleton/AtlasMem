@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from atlasmem.envs.kitchen import make_layout
+from atlasmem.envs.kitchen import oracle_actions
 
 
 class FakeLLM:
@@ -20,23 +20,10 @@ class FakeLLM:
         return self.replies.pop(0) if self.replies else ""
 
 
-def solution(task_goal: tuple[str | None, str, str], layout_seed: int = 0) -> list[str]:
-    """Optimal action script for a kitchen task."""
+def solution(task_goal, layout_seed: int = 0) -> list[str]:
     state, obj, target = task_goal
-    src = make_layout(layout_seed)[obj]
-    acts = [f"go to {src}"]
-    if src.split()[0] in ("fridge", "cabinet", "drawer"):
-        acts.append(f"open {src}")
-    acts.append(f"take {obj} from {src}")
-    if state:
-        app = {"clean": "sinkbasin 1", "hot": "microwave 1", "cool": "fridge 1"}[state]
-        verb = {"clean": "clean", "hot": "heat", "cool": "cool"}[state]
-        acts += [f"go to {app}", f"{verb} {obj} with {app}"]
-    acts.append(f"go to {target}")
-    if target.split()[0] in ("fridge", "cabinet", "drawer"):
-        acts.append(f"open {target}")
-    acts.append(f"put {obj} in {target}")
-    return acts
+    desc = f"{state} {obj}" if state else obj
+    return oracle_actions(f"put a {desc} in {target}", layout_seed)
 
 
 @pytest.fixture

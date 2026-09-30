@@ -13,7 +13,16 @@ read:   new task ──► BM25 over stored task descriptions ──► top-k ra
                  ──► curator LLM ──► short task-specific briefing ──► prepended to executor prompt
 ```
 
-The briefing is ephemeral; only raw trajectories are stored. This version uses an
+The briefing is ephemeral; only raw trajectories are stored.
+
+**Write gate.** A SUCCESS verdict from the judge must quote the observations that prove each
+requirement of the task. The quotes are verified in code against the trajectory's
+observations (never its actions), so a judge persuaded by an agent's own claims, or one that
+invents evidence, is overruled. `scripts/eval_judge.py` measures the judge against the
+environment's ground truth on correct and near-miss trajectories.
+
+**Briefings** are budgeted (`Curator(max_words=120)`, hard cap 2x), returned inside
+`<briefing>` tags so any leaked model reasoning is dropped. This version uses an
 **untrained, prompted curator**, which the paper reports is already competitive with
 write-time memory systems. Training the curator with GRPO is future work.
 
@@ -88,6 +97,16 @@ Tools: `get_briefing(task, k)`, `record_trajectory(task, steps, success?)`, `mem
 ```json
 {"mcpServers": {"atlasmem": {"command": "atlasmem", "args": ["serve"]}}}
 ```
+
+## Judge evaluation
+
+```bash
+python scripts/eval_judge.py --tasks 10 --model gpt-oss:20b
+```
+
+Builds one correct and several near-miss failures per task (skipped state step, wrong
+destination, look-alike object, success claimed only in the action text) and prints the
+judge's false-accept / false-reject rates with and without the evidence check.
 
 ## Tests
 

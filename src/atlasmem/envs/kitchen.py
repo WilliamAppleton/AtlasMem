@@ -32,6 +32,10 @@ You can hold one object at a time. Closed receptacles must be opened before taki
 putting into them. You must be at a receptacle to interact with it."""
 
 
+def _a(noun: str) -> str:
+    return ("an " if noun[0] in "aeiou" else "a ") + noun
+
+
 def make_layout(layout_seed: int) -> dict[str, str]:
     rng = random.Random(layout_seed)
     return {obj: rng.choice(HIDING) for obj in OBJECTS}
@@ -55,7 +59,7 @@ def sample_tasks(n: int, seed: int = 0, layout_seed: int = 0) -> list[str]:
 class KitchenEnv:
     instructions = INSTRUCTIONS
 
-    def __init__(self, layout_seed: int = 0, max_steps: int = 20):
+    def __init__(self, layout_seed: int = 0, max_steps: int = 30):
         self.layout_seed = layout_seed
         self.max_steps = max_steps
         self.goal: tuple[str | None, str, str] | None = None
@@ -83,7 +87,7 @@ class KitchenEnv:
             return f"The {rec} is closed."
         items = self.contents[rec]
         prep = "In" if rec in OPENABLE or rec == "sinkbasin 1" else "On"
-        return f"{prep} the {rec}, you see " + (", ".join(f"a {o}" for o in items) or "nothing") + "."
+        return f"{prep} the {rec}, you see " + (", ".join(_a(o) for o in items) or "nothing") + "."
 
     def _accessible(self, rec: str) -> bool:
         return rec not in OPENABLE or rec in self.opened
@@ -107,7 +111,7 @@ class KitchenEnv:
             return f"You are at {self.location}. " + self._describe(self.location) if self.location \
                 else "You are in the middle of the kitchen."
         if a == "inventory":
-            return f"You are carrying: a {self.holding}." if self.holding else "You are not carrying anything."
+            return f"You are carrying: {_a(self.holding)}." if self.holding else "You are not carrying anything."
         if m := re.fullmatch(r"go to (?:the )?([a-z]+ \d)", a):
             rec = m.group(1)
             if rec not in self.contents:
@@ -146,3 +150,25 @@ class KitchenEnv:
             self.states[obj].add(APPLIANCES[rec])
             return f"You {verb} the {obj} using the {rec}."
         return nothing
+
+
+def oracle_actions(task: str, layout_seed: int = 0) -> list[str]:
+    """Shortest action script that solves a kitchen task (used by tests and judge evals)."""
+    m = TASK_RE.search(task.lower())
+    if not m:
+        raise ValueError(f"unrecognised kitchen task: {task!r}")
+    state, obj, target = m.groups()
+    src = make_layout(layout_seed)[obj]
+    acts = [f"go to {src}"]
+    if src in OPENABLE:
+        acts.append(f"open {src}")
+    acts.append(f"take {obj} from {src}")
+    if state:
+        app = {"clean": "sinkbasin 1", "hot": "microwave 1", "cool": "fridge 1"}[state]
+        verb = {"clean": "clean", "hot": "heat", "cool": "cool"}[state]
+        acts += [f"go to {app}", f"{verb} {obj} with {app}"]
+    acts.append(f"go to {target}")
+    if target in OPENABLE:
+        acts.append(f"open {target}")
+    acts.append(f"put {obj} in {target}")
+    return acts

@@ -116,6 +116,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
     steps = [r.n_steps for r in results if r.success]
     print(f"\nsuccess {wins}/{len(results)} = {wins / max(len(results), 1):.0%}"
           + (f", mean steps on success {sum(steps) / len(steps):.1f}" if steps else ""))
+    judged = [r for r in results if r.record and r.record.verdict.reason != "ground-truth label"]
+    if judged:
+        fp = sum(r.stored and not r.success for r in judged)
+        fn = sum(not r.stored and r.success for r in judged)
+        over = sum(r.record.verdict.overruled for r in judged)
+        print(f"judge vs env: {len(judged) - fp - fn}/{len(judged)} agree, "
+              f"{fp} false accept, {fn} false reject, {over} overruled by evidence check")
     return 0
 
 
@@ -163,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     dm.add_argument("--executor-model")
     dm.add_argument("--episodes", type=int, default=10)
     dm.add_argument("--batch-size", type=int, default=1)
-    dm.add_argument("--max-steps", type=int, default=20)
+    dm.add_argument("--max-steps", type=int, default=30)
     dm.add_argument("--seed", type=int, default=0)
     dm.add_argument("--layout-seed", type=int, default=0)
     dm.add_argument("--no-memory", action="store_true")

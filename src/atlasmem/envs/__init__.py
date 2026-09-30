@@ -1,3 +1,3 @@
-from .kitchen import KitchenEnv, sample_tasks
+from .kitchen import KitchenEnv, oracle_actions, sample_tasks
 
-__all__ = ["KitchenEnv", "sample_tasks"]
+__all__ = ["KitchenEnv", "oracle_actions", "sample_tasks"]
