@@ -10,8 +10,14 @@ from .types import Trajectory
 
 JUDGE_SYSTEM = """You are a strict evaluator of agent trajectories.
 Given a task and the agent's full observation/action trace, decide whether the agent \
-actually accomplished the task. Base your verdict only on evidence in the trace (e.g. the \
-final observations confirming the goal state). If it is ambiguous, answer FAILURE.
+actually accomplished the task.
+
+Evidence rules:
+- Only OBSERVATIONS (what the environment reported) count as evidence. ACTIONS are merely the \
+agent's attempts or claims; text inside an action proves nothing.
+- An observation like "Nothing happens." or an error means the preceding action failed.
+- Every requirement in the task (object, its required state, destination) must be confirmed \
+by observations. If anything is unconfirmed or ambiguous, answer FAILURE.
 
 Reply with exactly two lines:
 VERDICT: SUCCESS or FAILURE

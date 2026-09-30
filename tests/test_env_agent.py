@@ -59,9 +59,9 @@ def test_parse_action():
 
 def scripted_executor_llm(fake_llm, layout_seed=0):
     def fn(messages):
-        user0 = next(m["content"] for m in messages if m["role"] == "user")
-        task = re.search(r"Your task: (.+)", user0).group(1)
-        n_done = sum(1 for m in messages if m["role"] == "assistant")
+        user = messages[-1]["content"]
+        task = re.search(r"Your task: (.+)", user).group(1)
+        n_done = len(re.findall(r"^\s+Action: ", user, re.M))
         acts = solution(goal(task), layout_seed)
         return acts[n_done] if n_done < len(acts) else "look"
     return fake_llm(fn=fn)
@@ -103,3 +103,15 @@ def test_run_sequence_without_memory(fake_llm):
 
 def test_parse_action_normalizes_typography():
     assert parse_action("go to cabinet 2") == "go to cabinet 2"
+
+
+def test_parse_action_strips_leaked_special_tokens():
+    assert parse_action("look<|message|>go to fridge 1<|constrain|>") == "look"
+
+
+def test_executor_history_is_single_user_turn(fake_llm):
+    llm = scripted_executor_llm(fake_llm)
+    Executor(llm).run(KitchenEnv(), "put an egg in shelf 1")
+    last = llm.calls[-1]
+    assert [m["role"] for m in last] == ["system", "user"]
+    assert "History:" in last[1]["content"] and last[1]["content"].endswith("Next action:")
