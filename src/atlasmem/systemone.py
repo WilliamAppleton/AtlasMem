@@ -50,8 +50,10 @@ class SystemOneClient:
         base = base_url or os.environ.get("SYSTEMONE_URL") or os.environ.get("OLLAMA_HOST") or "http://localhost:11434"
         self.base_url = (base if base.startswith("http") else "http://" + base).rstrip("/")
         if api_key is None:
-            api_key = os.environ.get("TYPESAFE_API_KEY") if self.base_url.startswith(TYPESAFE_URL) \
-                else os.environ.get("SYSTEMONE_API_KEY")
+            # Unset is fine when an egress proxy injects the credential for this host.
+            names = ("TYPESAFE_API_KEY", "JEV_API_KEY", "jev") if self.base_url.startswith(TYPESAFE_URL) \
+                else ("SYSTEMONE_API_KEY",)
+            api_key = next((os.environ[n] for n in names if os.environ.get(n)), None)
         self.api_key = api_key
         self.timeout = timeout
         self.retries = retries

@@ -61,3 +61,14 @@ def test_cascade_escalates_only_uncertain_band(fake_post, p, escalate, ok):
     c = CascadeJudge(SystemOneJudge(SystemOneClient("tev1", base_url="http://x")), slow, 0.1, 0.9)
     v = c.judge(T)
     assert v.success is ok and slow.n == int(escalate) and c.escalations == int(escalate)
+
+
+def test_typesafe_key_from_jev_var_or_none(fake_post, monkeypatch):
+    for n in ("TYPESAFE_API_KEY", "JEV_API_KEY", "jev"):
+        monkeypatch.delenv(n, raising=False)
+    calls = fake_post(0.9)
+    SystemOneJudge(SystemOneClient("jev", base_url=so.TYPESAFE_URL)).judge(T)
+    assert calls[-1][2] == {}  # no key: rely on proxy injection
+    monkeypatch.setenv("jev", "abc")
+    SystemOneJudge(SystemOneClient("jev", base_url=so.TYPESAFE_URL)).judge(T)
+    assert calls[-1][2] == {"Authorization": "Bearer abc"}
