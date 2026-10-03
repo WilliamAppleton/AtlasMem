@@ -121,7 +121,7 @@ uncertain band to the evidence-checked LLM judge. The defaults (`low=0.3, high=0
 for `clef` in front of `gpt-oss:20b`: on 81 tuning cases (seed 11) and 92 held-out cases (seed 12)
 the cascade made no errors, escalated 12-18% of cases, and averaged 6-7 s per case against
 16-18 s for gpt-oss alone. Re-tune for other fast models; a threshold of 0.9 let a real failure
-through that clef scored 0.907.
+through that clef scored 0.907. Full comparison: [docs/evals/2026-10-03-judges.md](docs/evals/2026-10-03-judges.md).
 
 ## Judge evaluation
 
@@ -136,6 +136,14 @@ environment; `--noisy` pads them with realistic dead ends. It also replays real 
 trajectories from `scripts/data/real_cases.jsonl`, including a mug-placed-for-a-cup failure an
 earlier judge accepted. Reports false-accept / false-reject rates, latency, and for
 probabilistic judges the best achievable threshold.
+
+To tune `CascadeJudge` for a fast model, `scripts/cascade_sim.py` runs each judge once per case and
+simulates every (`low`, `high`) band; `--save` and `--load` re-simulate without calling the models:
+
+```bash
+python scripts/cascade_sim.py --tasks 10 --noisy --fast s1:clef@http://localhost:11434 \
+    --slow llm:gpt-oss:20b@http://localhost:11434
+```
 
 ## Tests
 
