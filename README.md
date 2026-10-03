@@ -113,11 +113,15 @@ from atlasmem import SystemOneClient, SystemOneJudge, CascadeJudge, LLMJudge, Ol
 
 local = SystemOneJudge(SystemOneClient("nimble", base_url="http://localhost:11434"))  # Ollama >= 0.35
 cloud = SystemOneJudge(SystemOneClient("<model>", base_url="https://api.typesafe.ai"))  # $TYPESAFE_API_KEY
-judge = CascadeJudge(fast=local, slow=LLMJudge(OllamaLLM("gpt-oss:20b")), low=0.1, high=0.9)
+judge = CascadeJudge(fast=local, slow=LLMJudge(OllamaLLM("gpt-oss:20b")), low=0.3, high=0.95)
 ```
 
 `CascadeJudge` accepts/rejects confident cases with the decision model and escalates only the
-uncertain band to the evidence-checked LLM judge.
+uncertain band to the evidence-checked LLM judge. The defaults (`low=0.3, high=0.95`) are tuned
+for `clef` in front of `gpt-oss:20b`: on 81 tuning cases (seed 11) and 92 held-out cases (seed 12)
+the cascade made no errors, escalated 12-18% of cases, and averaged 6-7 s per case against
+16-18 s for gpt-oss alone. Re-tune for other fast models; a threshold of 0.9 let a real failure
+through that clef scored 0.907.
 
 ## Judge evaluation
 

@@ -63,6 +63,15 @@ def test_cascade_escalates_only_uncertain_band(fake_post, p, escalate, ok):
     assert v.success is ok and slow.n == int(escalate) and c.escalations == int(escalate)
 
 
+@pytest.mark.parametrize("p,escalate", [(0.96, False), (0.92, True), (0.31, True), (0.29, False)])
+def test_cascade_default_band(fake_post, p, escalate):
+    fake_post(p)
+    slow = SlowJudge()
+    c = CascadeJudge(SystemOneJudge(SystemOneClient("tev1", base_url="http://x")), slow)
+    c.judge(T)
+    assert slow.n == int(escalate)
+
+
 def test_typesafe_key_from_jev_var_or_none(fake_post, monkeypatch):
     for n in ("TYPESAFE_API_KEY", "JEV_API_KEY", "jev"):
         monkeypatch.delenv(n, raising=False)

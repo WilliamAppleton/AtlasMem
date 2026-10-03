@@ -124,9 +124,13 @@ class SystemOneJudge:
 
 
 class CascadeJudge:
-    """Fast decision model first; only the uncertain band [low, high) goes to the slow judge."""
+    """Fast decision model first; only the uncertain band [low, high) goes to the slow judge.
 
-    def __init__(self, fast: SystemOneJudge, slow: Any, low: float = 0.1, high: float = 0.9):
+    Defaults are tuned for clef -> gpt-oss:20b on eval_judge.py cases (100% on seed 11 and held-out
+    seed 12, ~15% escalated). 0.9 let a real failure through: clef scores look-alike failures ~0.9.
+    """
+
+    def __init__(self, fast: SystemOneJudge, slow: Any, low: float = 0.3, high: float = 0.95):
         self.fast, self.slow, self.low, self.high = fast, slow, low, high
         self.escalations = 0
 
