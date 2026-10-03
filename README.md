@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="AtlasMem logo: a folded map where two dotted routes meet at an orange pin" width="220">
+</p>
+
 # AtlasMem
 
 Just-in-Time Memory for LLM agents, after
