@@ -1,4 +1,4 @@
-"""LLM-as-judge write gate: only trajectories judged successful enter the bank.
+"""LLM-as-judge write gate: only trajectories judged successful are eligible for retrieval.
 
 A SUCCESS verdict must cite verbatim observation text as evidence. The quotes are checked
 against the trajectory's observations in code, so a judge that is persuaded by the agent's

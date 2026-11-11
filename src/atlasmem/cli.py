@@ -45,9 +45,17 @@ def cmd_record(args: argparse.Namespace) -> int:
     label = None if not args.label else args.label == "success"
     for item in items:
         res = mem.record(Trajectory.from_dict(item), label=label)
-        status = "stored" if res.stored else "rejected"
+        status = "stored" if res.stored else "rejected (kept, not retrievable)"
         print(f"{status}: {item.get('task', '')[:70]}  ({res.verdict.reason})")
     return 0
+
+
+def _gate(traj: Trajectory) -> str:
+    """The write gate's decision on a stored trajectory: ok, fail, or - when never judged."""
+    verdict = traj.metadata.get("verdict")
+    if not isinstance(verdict, dict):
+        return "-   "
+    return "ok  " if verdict.get("success") else "fail"
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -55,8 +63,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     trajs = mem.bank.all()
     for t in trajs[-args.limit:]:
         print(f"{t.id[:8]}  {time.strftime('%Y-%m-%d %H:%M', time.localtime(t.created_at))}  "
-              f"{len(t.steps):3d} steps  {t.task}")
-    print(f"({len(trajs)} trajectories in {mem.bank.path})")
+              f"{len(t.steps):3d} steps  {_gate(t)}  {t.task}")
+    failed = sum(_gate(t) == "fail" for t in trajs)
+    print(f"({len(trajs)} trajectories in {mem.bank.path}, {failed} judged failures not retrievable)")
     return 0
 
 

@@ -59,8 +59,39 @@ def test_record_gating_priority(fake_llm):
     assert mem.record(T("b")).stored is True
     assert mem.record(T("c"), label=False).stored is False  # label overrides judge
     assert len(judge_llm.calls) == 2
-    assert [t.task for t in bank.all()] == ["b"]
-    assert bank.all()[0].metadata["judge_reason"] == "yes"
+    # every trajectory is kept; only the judged success is retrievable
+    assert sorted(t.task for t in bank.all()) == ["a", "b", "c"]
+    assert bank.tasks(verified_only=True) == [(t.id, "b") for t in bank.all() if t.task == "b"]
+    assert next(t for t in bank.all() if t.task == "b").metadata["judge_reason"] == "yes"
+
+
+def test_record_keeps_full_verdict_in_metadata(fake_llm):
+    bank = MemoryBank()
+    judge_llm = fake_llm(['VERDICT: SUCCESS\nEVIDENCE: "You see a mug"\nREASON: yes',
+                          'VERDICT: SUCCESS\nEVIDENCE: "You put the mug away"\nREASON: done',
+                          "VERDICT: FAILURE\nEVIDENCE: none\nREASON: no mug moved"])
+    mem = JitMemory(bank, Curator(fake_llm()), LLMJudge(judge_llm))
+    ok, overruled, failed = T("a"), T("b"), T("c")
+    assert [r.stored for r in mem.record_batch([ok, overruled, failed])] == [True, False, False]
+    assert bank.get(ok.id).metadata["verdict"] == {
+        "success": True, "reason": "yes", "evidence": ["You see a mug"], "overruled": False}
+    v = bank.get(overruled.id).metadata["verdict"]
+    assert v["success"] is False and v["overruled"] is True
+    assert v["evidence"] == ["You put the mug away"] and "judge said: done" in v["reason"]
+    assert bank.get(failed.id).metadata["verdict"] == {
+        "success": False, "reason": "no mug moved", "evidence": [], "overruled": False}
+    assert mem.record(T("d"), label=False).stored is False
+    assert len(bank) == 4
+
+
+def test_brief_never_sees_judged_failures(fake_llm):
+    bank = MemoryBank()
+    curator_llm = fake_llm(["briefing"])
+    mem = JitMemory(bank, Curator(curator_llm), k=5)
+    mem.record(T("put a mug in drawer 1"), label=False)
+    assert mem.brief("put a mug in drawer 1").retrieved == [] and curator_llm.calls == []
+    mem.record(T("put a mug in shelf 1"), label=True)
+    assert [t.task for t in mem.brief("put a mug in drawer 1").retrieved] == ["put a mug in shelf 1"]
 
 
 def test_record_without_judge_uses_env_signal_or_raises(fake_llm):

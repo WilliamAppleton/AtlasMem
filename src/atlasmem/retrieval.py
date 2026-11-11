@@ -50,12 +50,19 @@ class BM25:
 
 
 class BM25Retriever:
-    """Retrieves the top-k raw trajectories whose task descriptions best match the query."""
+    """Retrieves the top-k raw trajectories whose task descriptions best match the query.
 
-    def __init__(self, bank: MemoryBank, k: int = 3, min_score: float = 0.0):
+    The bank also holds trajectories the write gate judged a failure. With ``verified_only``
+    (the default) those are left out of the index; pass ``False`` to search everything.
+    """
+
+    def __init__(
+        self, bank: MemoryBank, k: int = 3, min_score: float = 0.0, verified_only: bool = True
+    ):
         self.bank = bank
         self.k = k
         self.min_score = min_score
+        self.verified_only = verified_only
         self._built_version = -1
         self._ids: list[str] = []
         self._index: BM25 | None = None
@@ -63,7 +70,7 @@ class BM25Retriever:
     def _refresh(self) -> None:
         if self._built_version == self.bank.version and self._index is not None:
             return
-        pairs = self.bank.tasks()
+        pairs = self.bank.tasks(verified_only=self.verified_only)
         self._ids = [p[0] for p in pairs]
         self._index = BM25([p[1] for p in pairs])
         self._built_version = self.bank.version

@@ -35,11 +35,12 @@ def create_server(settings: Settings | None = None):  # noqa: ANN201
     def record_trajectory(task: str, steps: list[dict[str, str]], success: bool | None = None) -> dict[str, Any]:
         """Record a finished attempt. `steps` is a list of {"observation": ..., "action": ...}.
 
-        If `success` is omitted, an LLM judge decides; only successful attempts are stored.
+        If `success` is omitted, an LLM judge decides. Every attempt is kept, but only successful
+        ones are used for briefings; `stored` reports whether this one will be.
         """
         traj = Trajectory(task=task, steps=[Step(s.get("observation", ""), s.get("action", "")) for s in steps])
         res = mem.record(traj, label=success)
-        return {"stored": res.stored, "id": traj.id if res.stored else None, "reason": res.verdict.reason}
+        return {"stored": res.stored, "id": traj.id, "reason": res.verdict.reason}
 
     @server.tool()
     def memory_stats() -> dict[str, Any]:
