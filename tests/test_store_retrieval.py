@@ -3,7 +3,8 @@ import sqlite3
 
 import pytest
 
-from atlasmem import BM25, BM25Retriever, MemoryBank, Step, Trajectory
+from atlasmem import BM25, BM25Retriever, MemoryBank, Step, Trajectory, store
+from atlasmem.cli import main
 from atlasmem.retrieval import tokenize
 
 
@@ -114,6 +115,9 @@ def test_old_schema_db_opens_and_is_migrated_in_place(tmp_path):
     assert got.metadata == {"judge_reason": "ok"} and got.created_at == 0.0
     # rows the old gate stored were judged successes; the directly added one was never judged
     assert verdicts(db) == {"old0": 1, "old1": 1, "old2": 1, "old3": None}
+    assert bank.verdicts() == {"old0": True, "old1": True, "old2": True, "old3": None}
+    # recorded_at is backfilled from created_at (0.0 .. 3.0)
+    assert [t.id for t in bank.since(time=1.0)] == ["old2", "old3"]
     bank.add(T("clean a knife"))
     assert bank.delete("old3") and len(bank) == 4
     bank.close()
@@ -182,16 +186,74 @@ def test_since_version():
     assert bank.since(bank.version) == []
 
 
-def test_since_time_works_across_connections(tmp_path):
+@pytest.fixture
+def clock(monkeypatch):
+    """Controls the time MemoryBank.add stamps into recorded_at."""
+    now = [1000.0]
+    monkeypatch.setattr(store, "_now", lambda: now[0])
+    return now
+
+
+def test_since_time_works_across_connections(tmp_path, clock):
     db = tmp_path / "m.db"
     bank = MemoryBank(db)
     for i in range(4):
-        bank.add(T(f"task {i}", id=f"t{i}", created_at=100.0 + i))
+        clock[0] = 1000.0 + i
+        bank.add(T(f"task {i}", id=f"t{i}"))
     bank.close()
     reopened = MemoryBank(db)
-    assert [t.id for t in reopened.since(time=101.0)] == ["t2", "t3"]
-    assert len(reopened.since(time=0.0)) == 4 and reopened.since(time=103.0) == []
+    assert [t.id for t in reopened.since(time=1001.0)] == ["t2", "t3"]
+    assert len(reopened.since(time=0.0)) == 4 and reopened.since(time=1003.0) == []
     assert reopened.since(0) == []  # versions count this connection's writes only
+
+
+def test_since_time_uses_when_added_not_when_created(clock):
+    """A batch's trajectories are created during the batch and added after it."""
+    bank = MemoryBank()
+    clock[0] = 1000.0
+    bank.add(T("before the cutoff", id="early", created_at=990.0))
+    cutoff = 1005.0
+    clock[0] = 1010.0
+    bank.add(T("ran before the cutoff, added after it", id="late", created_at=995.0))
+    bank.add(T("created in the future, added now", id="future", created_at=5000.0))
+    assert [t.id for t in bank.since(time=cutoff)] == ["late", "future"]
+    assert bank.get("late").created_at == 995.0  # the trajectory's own timestamp is untouched
+    clock[0] = 1020.0
+    bank.add(bank.get("early"))  # re-adding counts as a new write
+    assert [t.id for t in bank.since(time=1015.0)] == ["early"]
+
+
+def test_db_with_verdict_but_no_recorded_at_is_migrated(tmp_path):
+    db = tmp_path / "mid.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(OLD_SCHEMA + "ALTER TABLE trajectories ADD COLUMN verdict INTEGER;")
+    conn.execute("INSERT INTO trajectories VALUES ('a', 'heat an apple', '[]', NULL, '{}', 7.0, 0)")
+    conn.commit()
+    conn.close()
+    bank = MemoryBank(db)
+    assert bank.verdicts() == {"a": False}  # an existing verdict is not overwritten
+    assert [t.id for t in bank.since(time=6.0)] == ["a"] and bank.since(time=7.0) == []
+
+
+def test_cli_list_reads_gate_from_verdict_column(tmp_path, capsys):
+    db = tmp_path / "m.db"
+    bank = MemoryBank(db)
+    bank.add(judged("put a mug in shelf 1", True, id="aaaaaaaa1"))
+    bank.add(judged("put a mug in drawer 1", False, id="bbbbbbbb1"))
+    bank.add(T("heat an apple", id="cccccccc1"))
+    # metadata that disagrees with the column: the column is what list must show
+    bank.add(T("cool a tomato", id="dddddddd1", metadata={"verdict": {"success": True}}))
+    bank.close()
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE trajectories SET verdict = 0 WHERE id = 'dddddddd1'")
+    conn.commit()
+    conn.close()
+    assert main(["list", "--db", str(db)]) == 0
+    out = capsys.readouterr().out
+    rows = {line.split()[0]: line for line in out.splitlines() if line[:1] in "abcd"}
+    assert " ok " in rows["aaaaaaaa"] and " fail " in rows["bbbbbbbb"]
+    assert " - " in rows["cccccccc"] and " fail " in rows["dddddddd"]
+    assert "2 judged failures" in out
 
 
 def test_since_needs_exactly_one_argument():

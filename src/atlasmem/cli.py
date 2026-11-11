@@ -50,21 +50,15 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
-def _gate(traj: Trajectory) -> str:
-    """The write gate's decision on a stored trajectory: ok, fail, or - when never judged."""
-    verdict = traj.metadata.get("verdict")
-    if not isinstance(verdict, dict):
-        return "-   "
-    return "ok  " if verdict.get("success") else "fail"
-
-
 def cmd_list(args: argparse.Namespace) -> int:
     mem = build_memory(_settings(args), use_judge=False)
     trajs = mem.bank.all()
+    verdicts = mem.bank.verdicts()  # the verdict column: True, False, or None when never judged
+    gate = {True: "ok  ", False: "fail", None: "-   "}
     for t in trajs[-args.limit:]:
         print(f"{t.id[:8]}  {time.strftime('%Y-%m-%d %H:%M', time.localtime(t.created_at))}  "
-              f"{len(t.steps):3d} steps  {_gate(t)}  {t.task}")
-    failed = sum(_gate(t) == "fail" for t in trajs)
+              f"{len(t.steps):3d} steps  {gate[verdicts.get(t.id)]}  {t.task}")
+    failed = sum(v is False for v in verdicts.values())
     print(f"({len(trajs)} trajectories in {mem.bank.path}, {failed} judged failures not retrievable)")
     return 0
 

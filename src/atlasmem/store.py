@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time as _time
 from pathlib import Path
 
 from .types import Step, Trajectory
@@ -17,10 +18,17 @@ CREATE TABLE IF NOT EXISTS trajectories (
     success INTEGER,
     metadata TEXT NOT NULL,
     created_at REAL NOT NULL,
-    verdict INTEGER
+    verdict INTEGER,
+    recorded_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_traj_created ON trajectories(created_at);
 """
+# Created after migration, because an older database has no recorded_at column yet.
+_INDEXES = "CREATE INDEX IF NOT EXISTS idx_traj_recorded ON trajectories(recorded_at);"
+
+
+def _now() -> float:
+    return _time.time()
 
 # Named explicitly: a migrated database and a fresh one must read the same way.
 _COLS = "id, task, steps, success, metadata, created_at"
@@ -44,6 +52,9 @@ class MemoryBank:
     Two outcome columns sit beside each trajectory: ``success`` is the environment's signal and
     ``verdict`` is the write gate's decision (1 = judged success, 0 = judged failure, NULL = never
     judged). Failures are kept so they can be read later; retrieval leaves them out by default.
+
+    Two timestamps too: ``created_at`` comes from the trajectory (when the episode ran) and
+    ``recorded_at`` is set by ``add`` (when it entered the bank).
     """
 
     def __init__(self, path: str | Path = ":memory:"):
@@ -58,17 +69,22 @@ class MemoryBank:
         self._added_at: dict[str, int] = {}  # id -> version at which this connection added it
 
     def _migrate(self) -> None:
-        """Add the ``verdict`` column to a database created before it existed."""
+        """Add the columns a database created by an earlier version is missing."""
         cols = [r[1] for r in self._conn.execute("PRAGMA table_info(trajectories)")]
-        if "verdict" in cols:
-            return
         with self._lock:
-            self._conn.execute("ALTER TABLE trajectories ADD COLUMN verdict INTEGER")
-            # Before this column, the write gate stored successes only and stamped each one with
-            # ``judge_reason``. Those rows were judged successful; anything else was never judged.
-            rows = self._conn.execute("SELECT id, metadata FROM trajectories").fetchall()
-            judged = [(tid,) for tid, meta in rows if "judge_reason" in json.loads(meta)]
-            self._conn.executemany("UPDATE trajectories SET verdict = 1 WHERE id = ?", judged)
+            if "verdict" not in cols:
+                self._conn.execute("ALTER TABLE trajectories ADD COLUMN verdict INTEGER")
+                # Before this column, the write gate stored successes only and stamped each one
+                # with ``judge_reason``. Those rows were judged successful; anything else was
+                # never judged.
+                rows = self._conn.execute("SELECT id, metadata FROM trajectories").fetchall()
+                judged = [(tid,) for tid, meta in rows if "judge_reason" in json.loads(meta)]
+                self._conn.executemany("UPDATE trajectories SET verdict = 1 WHERE id = ?", judged)
+            if "recorded_at" not in cols:
+                self._conn.execute("ALTER TABLE trajectories ADD COLUMN recorded_at REAL")
+                # The time of the original add is not known; created_at is the closest record.
+                self._conn.execute("UPDATE trajectories SET recorded_at = created_at")
+            self._conn.execute(_INDEXES)
             self._conn.commit()
 
     @property
@@ -78,7 +94,8 @@ class MemoryBank:
     def add(self, traj: Trajectory) -> str:
         with self._lock:
             self._conn.execute(
-                f"INSERT OR REPLACE INTO trajectories ({_COLS}, verdict) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO trajectories ({_COLS}, verdict, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     traj.id,
                     traj.task,
@@ -87,6 +104,7 @@ class MemoryBank:
                     json.dumps(traj.metadata),
                     traj.created_at,
                     _verdict_of(traj),
+                    _now(),
                 ),
             )
             self._conn.commit()
@@ -109,14 +127,14 @@ class MemoryBank:
 
         ``since(v)`` returns what this connection added after ``bank.version`` was ``v``, in the
         order added. The version counter starts at 0 each time the database is opened, so use it
-        within one process. ``since(time=t)`` returns trajectories with ``created_at > t`` and
-        works across processes.
+        within one process. ``since(time=t)`` returns trajectories added to the bank after ``t``
+        (``recorded_at > t``), whenever they were created, and works across processes.
         """
         if (version is None) == (time is None):
             raise ValueError("Pass exactly one of version or time.")
         if time is not None:
             rows = self._conn.execute(
-                f"SELECT {_COLS} FROM trajectories WHERE created_at > ? ORDER BY created_at",
+                f"SELECT {_COLS} FROM trajectories WHERE recorded_at > ? ORDER BY recorded_at",
                 (time,),
             ).fetchall()
             return [_row_to_traj(r) for r in rows]
@@ -133,6 +151,11 @@ class MemoryBank:
         return self._conn.execute(
             f"SELECT id, task FROM trajectories {where}ORDER BY created_at"
         ).fetchall()
+
+    def verdicts(self) -> dict[str, bool | None]:
+        """The write gate's decision per trajectory id; None when never judged."""
+        rows = self._conn.execute("SELECT id, verdict FROM trajectories").fetchall()
+        return {tid: None if v is None else bool(v) for tid, v in rows}
 
     def delete(self, traj_id: str) -> bool:
         with self._lock:
