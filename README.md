@@ -12,8 +12,8 @@ Most agent memory systems decide what to keep when a task **ends**. AtlasMem kee
 raw trajectory and defers curation to **read time**, when the next task is known:
 
 ```
-write:  finished trajectory ──► judge (success?) ──► store raw in SQLite
-read:   new task ──► BM25 over stored task descriptions ──► top-k raw trajectories
+write:  finished trajectory ──► judge (success?) ──► store raw in SQLite with its verdict
+read:   new task ──► BM25 over task descriptions of successes ──► top-k raw trajectories
                  ──► curator LLM ──► short task-specific briefing ──► prepended to executor prompt
 ```
 
@@ -63,7 +63,7 @@ system_prompt = (b.payload + "\n\n" + base_prompt) if b.payload else base_prompt
 # ... agent runs ...
 traj = Trajectory(task="put a clean mug in shelf 1",
                   steps=[Step(observation="...", action="...")])
-mem.record(traj)               # LLM judge gates the write
+mem.record(traj)               # kept either way; the LLM judge decides if it is retrievable
 mem.record(traj, label=True)   # or use a ground-truth label
 ```
 

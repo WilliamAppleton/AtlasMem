@@ -1,7 +1,8 @@
 """JitMemory: the public facade tying store, retriever, curator and judge together.
 
-Write path: keep the raw trajectory, gated only by success (LLM judge or a ground-truth label).
-Read path: BM25 top-k over task descriptions -> curator synthesizes an ephemeral briefing.
+Write path: keep every raw trajectory along with its verdict (LLM judge or a ground-truth label).
+Read path: BM25 top-k over the task descriptions of trajectories that passed the gate -> curator
+synthesizes an ephemeral briefing.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from .types import Briefing, Trajectory
 
 @dataclass
 class RecordResult:
-    stored: bool
+    stored: bool  # eligible for retrieval; a judged failure is kept in the bank but is not
     verdict: Verdict
 
 
@@ -43,7 +44,7 @@ class JitMemory:
         return Briefing(task=task, payload=payload, retrieved=trajs, scores=[s for _, s in hits])
 
     def evaluate(self, traj: Trajectory, label: bool | None = None) -> Verdict:
-        """Decide whether a trajectory is worth storing.
+        """Decide whether a trajectory passed, and so whether retrieval may return it.
 
         Priority: explicit ``label`` > LLM judge > ``traj.success`` from the environment.
         """
@@ -56,10 +57,18 @@ class JitMemory:
         raise ValueError("No label, judge, or traj.success available to gate this trajectory.")
 
     def record(self, traj: Trajectory, label: bool | None = None) -> RecordResult:
-        verdict = self.evaluate(traj, label)
+        return self._store(traj, self.evaluate(traj, label))
+
+    def _store(self, traj: Trajectory, verdict: Verdict) -> RecordResult:
+        traj.metadata["verdict"] = {
+            "success": verdict.success,
+            "reason": verdict.reason,
+            "evidence": list(verdict.evidence),
+            "overruled": verdict.overruled,
+        }
         if verdict.success:
             traj.metadata.setdefault("judge_reason", verdict.reason)
-            self.bank.add(traj)
+        self.bank.add(traj)
         return RecordResult(stored=verdict.success, verdict=verdict)
 
     def record_batch(
@@ -69,10 +78,4 @@ class JitMemory:
         trajs = list(trajs)
         labels = list(labels) if labels is not None else [None] * len(trajs)
         verdicts = [self.evaluate(t, lab) for t, lab in zip(trajs, labels)]
-        results = []
-        for t, v in zip(trajs, verdicts):
-            if v.success:
-                t.metadata.setdefault("judge_reason", v.reason)
-                self.bank.add(t)
-            results.append(RecordResult(stored=v.success, verdict=v))
-        return results
+        return [self._store(t, v) for t, v in zip(trajs, verdicts)]
